@@ -1,8 +1,10 @@
 import streamlit as st
 import requests
+import os
 
-# Base URL for the FastAPI backend
-BASE_URL = "http://127.0.0.1:8000/api/v1"
+# Base URL for the FastAPI backend - configurable via environment variable
+BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:8000/api/v1")
+# BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
 
 @st.cache_data(ttl=30)  # Cache the user list for 30 seconds
 def get_user_list():
@@ -12,20 +14,26 @@ def get_user_list():
         response.raise_for_status()
         return response.json().get("users", [])
     except requests.exceptions.RequestException:
-        return [] # Return empty list if backend is not available
+        return None  # Return None if backend is not available
 
 def login_page():
     """Displays the login page and handles authentication."""
     with st.container(border=True):
-        st.header("Login to Bank Acount")
+        st.header("Login to Your Bank Account")
         user_list = get_user_list()
-        
-        if not user_list:
-            st.warning("Could not fetch user list from the backend. Please ensure the backend is running.")
-            name = st.text_input("Name", key="login_name")
+
+        if user_list is None:
+            st.error(
+                "**Failed to connect to the backend.**\n\n"
+                "Please ensure the backend server is running and accessible."
+            )
+            name = st.text_input("Name", key="login_name", disabled=True)
+        elif not user_list:
+            st.warning("No users found in the database.")
+            name = st.text_input("Name", key="login_name", disabled=True)
         else:
-            name = st.selectbox("Select Your Name", options=user_list, key="login_name_select")
-        
+            name = st.selectbox("Select Your Name", options=[""] + user_list, key="login_name_select")
+
         pin = st.text_input("PIN", type="password", key="login_pin")
 
         if st.button("Login"):
@@ -38,7 +46,7 @@ def login_page():
                     f"{BASE_URL}/authenticate",
                     json={"name": name, "pin_number": pin}
                 )
-                response.raise_for_status()  # Raise an exception for bad status codes (4xx or 5xx)
+                response.raise_for_status()
                 
                 data = response.json()
                 if data.get("authenticated"):
@@ -46,21 +54,22 @@ def login_page():
                     st.session_state["name"] = name
                     st.session_state["balance"] = data.get("bank_balance")
                     st.success("Login successful!")
-                    st.rerun()  # Rerun the script to show the main app
+                    st.rerun()
                 else:
                     st.error(data.get("message", "Authentication failed."))
-            except requests.exceptions.RequestException as e:
-                st.error(f"Failed to connect to the backend: {e}")
+            except requests.exceptions.HTTPError as e:
+                st.error(f"Authentication failed: {e.response.json().get('detail', 'Unknown error')}")
+            except requests.exceptions.RequestException:
+                st.error("Failed to connect to the backend. Please check if the server is running.")
             except Exception as e:
-                st.error(f"An error occurred: {e}")
+                st.error(f"An unexpected error occurred: {e}")
 
 def main_app():
     """Displays the main application interface after login."""
     st.header(f"Welcome, {st.session_state['name']}!")
-    st.subheader(f"Your current balance is: ${st.session_state['balance']:.2f}")
+    st.subheader(f"Your current balance is: ${st.session_state.get('balance', 0):.2f}")
 
     if st.button("Logout"):
-        # Clear session state to log out
         for key in list(st.session_state.keys()):
             del st.session_state[key]
         st.rerun()
@@ -72,6 +81,10 @@ def main_app():
         st.subheader("Deposit Funds")
         deposit_amount = st.number_input("Amount to Deposit", min_value=0.01, step=0.01, format="%.2f", key="deposit_amount_input")
         if st.button("Deposit", key="deposit_button"):
+            if deposit_amount <= 0:
+                st.error("Deposit amount must be a positive number.")
+                return
+
             try:
                 response = requests.post(
                     f"{BASE_URL}/deposit",
@@ -87,7 +100,6 @@ def main_app():
             except requests.exceptions.RequestException as e:
                 st.error(f"Failed to connect to the backend: {e}")
 
-
     st.markdown("---")
 
     # --- Bank Transfer Section ---
@@ -96,7 +108,11 @@ def main_app():
         st.write(f"You are sending from: **{st.session_state['name']}**")
         
         user_list = get_user_list()
-        # Filter out the current user from the list of receivers
+
+        if user_list is None:
+            st.warning("Cannot fetch user list. Bank transfers are currently unavailable.")
+            return
+
         receivers_list = [user for user in user_list if user != st.session_state["name"]]
 
         if not receivers_list:
@@ -125,14 +141,12 @@ def main_app():
                 response.raise_for_status()
                 data = response.json()
 
-                # Update sender's balance in session state
                 st.session_state["balance"] = data.get("sender_new_balance")
 
                 st.success(data.get("message"))
                 st.info(f"Your new balance: ${data.get('sender_new_balance'):.2f}")
                 st.info(f"Receiver ({receiver_name})'s new balance: ${data.get('receiver_new_balance'):.2f}")
 
-                # Short delay and rerun to show updated main balance
                 st.toast("Updating your balance...")
                 import time
                 time.sleep(2)
