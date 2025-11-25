@@ -1,28 +1,21 @@
-from vercel_kv import kv
+import json
 from typing import Dict, Any
 
-# Initial data to populate the database if it's empty
-INITIAL_DB = {
-    "users": [
-        {"name": "Ali", "pin_number": "1234", "bank_balance": 5000},
-        {"name": "Mona", "pin_number": "5678", "bank_balance": 7500},
-        {"name": "Saif", "pin_number": "9876", "bank_balance": 3200},
-    ]
-}
+DATABASE_FILE = "database.json"
 
 def load_db() -> Dict[str, Any]:
-    """Reads the database from Vercel KV or initializes it."""
-    db = kv.get("database")
-    if db is None:
-        # If the db doesn't exist, initialize it with default data
-        kv.set("database", INITIAL_DB)
-        return INITIAL_DB
-    # The data from KV is already a dictionary
-    return db
+    """Reads the database file and returns its content."""
+    try:
+        with open(DATABASE_FILE, "r") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        # If the file doesn't exist or is empty/corrupt, return a default structure
+        return {"users": []}
 
 def save_db(data: Dict[str, Any]) -> None:
-    """Saves the given data to Vercel KV."""
-    kv.set("database", data)
+    """Saves the given data to the database file."""
+    with open(DATABASE_FILE, "w") as f:
+        json.dump(data, f, indent=2)
 
 def _find_user(name: str):
     """Helper function to find a user by name."""
@@ -57,8 +50,7 @@ def deposit(name: str, amount: float) -> float:
     user_found = False
     for user in db.get("users", []):
         if user["name"].lower() == name.lower():
-            # Ensure balance is treated as a number
-            user["bank_balance"] = float(user.get("bank_balance", 0)) + amount
+            user["bank_balance"] += amount
             user_found = True
             break
     
@@ -66,10 +58,7 @@ def deposit(name: str, amount: float) -> float:
         raise ValueError("Deposit failed: User not found.")
 
     save_db(db)
-    # Re-fetch user to get the updated balance accurately
-    updated_user = _find_user(name)
-    return updated_user["bank_balance"]
-
+    return get_balance(name)
 
 def transfer(sender_name: str, receiver_name: str, amount: float) -> None:
     """Transfers a given amount from one user to another."""
@@ -94,10 +83,6 @@ def transfer(sender_name: str, receiver_name: str, amount: float) -> None:
     if not receiver:
         raise ValueError("Transfer failed: Receiver not found.")
 
-    # Ensure balances are numeric
-    sender["bank_balance"] = float(sender.get("bank_balance", 0))
-    receiver["bank_balance"] = float(receiver.get("bank_balance", 0))
-
     if sender["bank_balance"] < amount:
         raise ValueError("Transfer failed: Insufficient funds.")
 
@@ -109,5 +94,4 @@ def transfer(sender_name: str, receiver_name: str, amount: float) -> None:
 def get_all_user_names() -> list[str]:
     """Returns a list of all user names from the database."""
     db = load_db()
-    # Handle case where db might not have 'users' key
     return [user["name"] for user in db.get("users", [])]

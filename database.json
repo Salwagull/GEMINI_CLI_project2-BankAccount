@@ -1,0 +1,19 @@
+{
+  "users": [
+    {
+      "name": "Ali",
+      "pin_number": "1234",
+      "bank_balance": 5000
+    },
+    {
+      "name": "Mona",
+      "pin_number": "5678",
+      "bank_balance": 7500
+    },
+    {
+      "name": "Saif",
+      "pin_number": "9876",
+      "bank_balance": 3200
+    }
+  ]
+}

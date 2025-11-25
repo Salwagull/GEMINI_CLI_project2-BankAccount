@@ -1,10 +1,8 @@
 import streamlit as st
 import requests
-import os
 
-# Base URL for the FastAPI backend - configurable via environment variable
-BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:8000/api/v1")
-# BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
+# Base URL for the FastAPI backend
+BASE_URL = "http://127.0.0.1:8000/api/v1"
 
 @st.cache_data(ttl=30)  # Cache the user list for 30 seconds
 def get_user_list():
